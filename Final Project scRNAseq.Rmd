@@ -1,0 +1,526 @@
+---
+title: "Final Project scRNAseq"
+author: "Carisa Zeng"
+date: "3/18/2022"
+output: html_document
+---
+
+```{r setup}
+
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(Matrix)
+})
+
+```
+
+```{r}
+
+BC09 <- Read10X(data.dir = "~/Transcriptomics final project/single cell data/data/BC09/")
+pbmc1 <- CreateSeuratObject(counts = BC09,
+                           min.cells = 3,
+                           min.features = 200,
+                           project = "BC09")
+
+
+```
+
+```{r}
+BC10 <- Read10X(data.dir = "~/Transcriptomics final project/single cell data/data/BC10/")
+pbmc2 <- CreateSeuratObject(counts = BC10,
+                           min.cells = 3,
+                           min.features = 200,
+                           project = "BC10")
+
+
+```
+
+
+
+
+
+First check for mt in both sets
+```{r}
+pbmc1[["percent.mt"]] <- PercentageFeatureSet(pbmc1, pattern = "^MT-")
+head(pbmc1@meta.data)
+```
+
+```{r}
+pbmc2[["percent.mt"]] <- PercentageFeatureSet(pbmc2, pattern = "^MT-")
+head(pbmc2@meta.data)
+```
+
+BC09 has greater percent.mt range
+
+```{r}
+VlnPlot(pbmc1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+```
+
+
+```{r}
+VlnPlot(pbmc2, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+```
+
+
+```{r}
+FeatureScatter(pbmc1, "nCount_RNA","percent.mt")
+```
+
+
+```{r}
+FeatureScatter(pbmc2, "nCount_RNA","percent.mt")
+```
+
+
+Based on the plots, two datasets have different levels of gene number count distribution, which could lead to differences in noise. Hence, different thresholds are determined based on the plot. 
+
+
+
+
+
+
+```{r}
+table(pbmc1@meta.data$percent.mt < 10 & pbmc1@meta.data$nFeature_RNA<2500 & pbmc1@meta.data$nFeature_RNA > 700)
+```
+
+
+```{r}
+table(pbmc2@meta.data$percent.mt < 10 & pbmc2@meta.data$nFeature_RNA<2500 & pbmc2@meta.data$nFeature_RNA > 700)
+```
+
+```{r}
+pbmc1 <- subset(pbmc1, subset = nFeature_RNA < 2500 & percent.mt < 10 & nFeature_RNA > 700)
+pbmc2 <- subset(pbmc2, subset = nFeature_RNA < 2500 & percent.mt < 10 & nFeature_RNA > 700)
+```
+
+
+
+```{r}
+
+hist09 = hist(colSums(pbmc1@assays$RNA@data),breaks = 100, plot = FALSE)
+hist10 = hist(colSums(pbmc2@assays$RNA@data),breaks = 100, plot = FALSE)
+
+
+plot(hist09,
+     col = rgb(1,0,0,0.5),
+     main = "Total expression before normalization",
+     xlab = "Sum of expression")
+plot(hist10,
+     col = rgb(0,0,1,0.5),
+     main = "Total expression before normalization",
+     xlab = "Sum of expression",
+     add = TRUE)
+legend("topright",c("BC09","BC10"),fill = c(rgb(1,0,0,0.5),rgb(0,0,1,0.5)))
+```
+
+
+
+###Normalization
+
+
+```{r}
+pbmc1 <- NormalizeData(pbmc1, normalization.method = "LogNormalize", scale.factor = 10000)
+pbmc2 <- NormalizeData(pbmc2, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+
+```{r}
+
+hist09 = hist(pbmc1@assays[["RNA"]]@data@x,breaks = 100, plot = FALSE)
+hist10 = hist(pbmc2@assays[["RNA"]]@data@x,breaks = 100, plot = FALSE)
+
+
+plot(hist09,
+     col = rgb(1,0,0,0.5),
+     main = "Total expression after normalization",
+     xlab = "Sum of expression")
+plot(hist10,
+     col = rgb(0,0,1,0.5),
+     add = TRUE)
+legend("topright",c("BC09","BC10"),fill = c(rgb(1,0,0,0.5),rgb(0,0,1,0.5)))
+
+
+
+
+```
+
+
+### Combine objects
+
+
+```{r}
+#merge objects
+
+pbmc.combined <- merge(pbmc1, y = pbmc2, add.cell.ids = c("BC09", "BC10"), project = "BC")
+```
+
+
+```{r}
+summary(colSums(pbmc.combined))
+```
+
+
+```{r}
+pbmc.combined[["percent.mt"]] <- PercentageFeatureSet(pbmc.combined, pattern = "^MT-")
+head(pbmc.combined@meta.data)
+```
+
+There are certainly some batch effect, since the ncount_RNA plot of BC10 is slightly truncated after filtering while the other metrics have relatively similar distribution.
+
+```{r}
+VlnPlot(pbmc.combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+The percentage mitochondrial RNA composition is also relatively overlapped with slight difference in dispersion.
+
+```{r}
+FeatureScatter(pbmc.combined, "nCount_RNA","percent.mt")
+```
+
+```{r}
+FeatureScatter(pbmc.combined, "nCount_RNA","nFeature_RNA")
+```
+
+
+
+### run PCA plot and heatmap to check for confounding effects?
+
+
+### finding highly variable genes
+
+```{r}
+pbmc.combined <- FindVariableFeatures(object = pbmc.combined,
+                             selection.method = "vst",
+                             nfeatures = 2000)
+
+```
+
+```{r}
+VariableFeaturePlot(pbmc.combined)
+```
+
+
+<!-- ```{r} -->
+<!-- pbmc.combined <- FindVariableFeatures(object = pbmc.combined, -->
+<!--                              selection.method = "mvp", -->
+<!--                              nfeatures = 2000) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- VariableFeaturePlot(pbmc.combined) -->
+<!-- ``` -->
+
+# ```{r}
+# pbmc.combined <- FindVariableFeatures(object = pbmc.combined,
+#                              selection.method = "disp",
+#                              nfeatures = 2000)
+# 
+# ```
+
+# ```{r}
+# VariableFeaturePlot(pbmc.combined)
+# ```
+
+
+```{r}
+all.genes <- rownames(pbmc.combined)
+
+# build linear model using nUMI and percent.mito
+pbmc.combined <- ScaleData(pbmc.combined, features = all.genes, vars.to.regress = c("nCount_RNA", "percent.mt"))
+
+```
+
+Dimension reduction
+
+```{r}
+pbmc.combined <- RunPCA(pbmc.combined, features = VariableFeatures(object = pbmc.combined))
+print(pbmc.combined[["pca"]], dims = 1:5, nfeatures = 5)
+```
+
+```{r}
+VizDimLoadings(pbmc.combined, dims = 1:2, reduction = "pca")
+```
+
+
+```{r}
+DimHeatmap(pbmc.combined, dims = 1, cells = 500, balanced = TRUE)
+```
+
+
+```{r}
+system.time(
+  pbmc.combined <- JackStraw(pbmc.combined, num.replicate = 100)
+)
+pbmc.combined <- ScoreJackStraw(pbmc.combined, dims = 1:15)
+JackStrawPlot(pbmc.combined, dims = 1:15)
+```
+
+The PCs have high signifance in general. The heatmaps are also relatively clear in patterns, but the patterns gets relatively noisey starting from PC 12.
+
+```{r}
+DimHeatmap(pbmc.combined, dims = 1:12, cells = 500, balanced = TRUE)
+```
+
+```{r}
+ElbowPlot(pbmc.combined, ndims = 15)
+```
+
+
+```{r}
+DimPlot(pbmc.combined, reduction = "pca",group.by =  'orig.ident')
+```
+
+
+
+### Clustering analysis
+
+Trying different parameters
+
+
+```{r}
+pbmc.combined <- RunTSNE(object = pbmc.combined, dims.use = 1:10, do.fast = TRUE)
+TSNEPlot(object = pbmc.combined)
+```
+
+
+```{r}
+pbmc.combined <- FindNeighbors(pbmc.combined, dims = 1:10)
+pbmc.combined <- FindClusters(pbmc.combined, resolution = 0.5)
+```
+
+```{r}
+pbmc.combined <- RunUMAP(pbmc.combined, dims = 1:10)
+
+DimPlot(pbmc.combined, reduction = "umap")
+
+```
+
+<!-- ```{r} -->
+
+<!-- pbmc.combined <- FindClusters(pbmc.combined, resolution = 1) -->
+
+<!-- pbmc.combined <- RunUMAP(pbmc.combined, dims = 1:10) -->
+
+<!-- DimPlot(pbmc.combined, reduction = "umap") -->
+
+
+<!-- ``` -->
+
+```{r}
+pbmc.markers <- FindAllMarkers(pbmc.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25,test.use = 'negbinom')
+```
+
+
+```{r}
+pbmc.markers %>%
+  group_by(cluster) %>%
+  top_n(10, avg_log2FC) -> top10
+ 
+
+```
+
+
+
+```{r}
+
+head(top10)
+DoHeatmap(object = pbmc.combined,
+          features = top10$gene) + NoLegend()
+```
+
+
+
+```{r}
+n_cells <- FetchData(pbmc.combined, 
+                     vars = c("ident", "orig.ident")) %>%
+        dplyr::count(ident, orig.ident) %>%
+        tidyr::spread(ident, n)
+
+# View table
+print(n_cells)
+```
+
+```{r}
+write.table(top10, file='~/Transcriptomics final project/top10markers.txt')
+```
+
+```{r}
+c0maker = pbmc.markers[pbmc.markers$cluster==0,]
+c1maker = pbmc.markers[pbmc.markers$cluster==1,]
+c2maker = pbmc.markers[pbmc.markers$cluster==2,]
+c3maker = pbmc.markers[pbmc.markers$cluster==3,]
+c4maker = pbmc.markers[pbmc.markers$cluster==4,]
+c5maker = pbmc.markers[pbmc.markers$cluster==5,]
+c6maker = pbmc.markers[pbmc.markers$cluster==6,]
+c7maker = pbmc.markers[pbmc.markers$cluster==7,]
+c8maker = pbmc.markers[pbmc.markers$cluster==8,]
+```
+
+sort marker
+
+```{r}
+c0maker = c0maker[order(c0maker$avg_log2FC),]
+c1maker = c1maker[order(c1maker$avg_log2FC),]
+c2maker = c2maker[order(c2maker$avg_log2FC),]
+c3maker = c3maker[order(c3maker$avg_log2FC),]
+c4maker = c4maker[order(c4maker$avg_log2FC),]
+c5maker = c5maker[order(c5maker$avg_log2FC),]
+c6maker = c6maker[order(c6maker$avg_log2FC),]
+c7maker = c7maker[order(c7maker$avg_log2FC),]
+c8maker = c8maker[order(c8maker$avg_log2FC),]
+```
+
+```{r}
+VlnPlot(object = pbmc.combined, features = c(c0maker$gene[1],c1maker$gene[1]))
+```
+
+```{r}
+VlnPlot(object = pbmc.combined, features = c(c2maker$gene[1],c3maker$gene[1]))
+```
+
+
+```{r}
+VlnPlot(object = pbmc.combined, features = c(c4maker$gene[1],c5maker$gene[1]))
+```
+
+```{r}
+VlnPlot(object = pbmc.combined, features = c(c6maker$gene[1],c7maker$gene[1]))
+```
+
+```{r}
+VlnPlot(object = pbmc.combined, features = c8maker$gene[1])
+```
+
+
+```{r B cell}
+FeaturePlot(object = pbmc.combined,
+            features = c("MS4A1", "PNOC"),
+            cols = c("grey", "blue"),
+            reduction = "umap")
+```
+
+
+```{r}
+FeaturePlot(object = pbmc.combined,
+            features = c("CPA3", "MS4A2", "HDC"),
+            cols = c("grey", "blue"),
+            reduction = "umap")
+```
+
+
+```{r NK}
+FeaturePlot(object = pbmc.combined,
+            features = c("XCL1", "XCL2", "NCR1"),
+            cols = c("grey", "blue"),
+            reduction = "umap")
+```
+
+
+T cells
+```{r}
+FeaturePlot(object = pbmc.combined,
+            features = c("CD6", "CD3D", "CD3E", "SH2D1A", "TRAT1", "CD3G"),
+            cols = c("grey", "blue"),
+            reduction = "umap")
+```
+
+```{r}
+
+FeaturePlot(object = pbmc.combined,
+            features = "FOXP3",
+            reduction = "umap")
+```
+
+### functional analysis
+
+```{r}
+suppressMessages({
+  library(tidyr)
+  library(dplyr)
+  library(ggnewscale)
+  library(rWikiPathways)
+})
+suppressMessages(library(org.Hs.eg.db))
+suppressMessages(library(DOSE))
+suppressMessages(library(pathview))
+suppressMessages(library(purrr))
+suppressMessages(library(clusterProfiler))
+suppressMessages(library(annotables))
+suppressMessages(library(enrichplot))
+```
+
+
+Create gene list from markers.
+
+
+```{r}
+list0 = c0maker$gene
+list1 = c1maker$gene
+list2 = c2maker$gene
+list3 = c3maker$gene
+list4 = c4maker$gene
+list5 = c5maker$gene
+list6 = c6maker$gene
+list7 = c7maker$gene
+list8 = c8maker$gene
+```
+
+```{r}
+gene.df <- bitr(list7, fromType = "SYMBOL",
+        toType = c("ENSEMBL", "ENTREZID"),
+        OrgDb = org.Hs.eg.db)
+head(gene.df)
+
+```
+
+
+
+```{r}
+Fulllist = pbmc.markers[order(pbmc.markers$avg_log2FC),]
+```
+
+
+```{r}
+list.df  <- bitr(Fulllist$gene, fromType = "SYMBOL",
+        toType = c("ENSEMBL", "ENTREZID"),
+        OrgDb = org.Hs.eg.db)
+head(list.df)
+
+```
+
+```{r}
+egosig <- enrichGO(gene          = gene.df$ENSEMBL,
+                   keyType = 'ENSEMBL',
+                   universe      = list.df$ENSEMBL,
+                   OrgDb         = org.Hs.eg.db,
+                   ont           = "CC",
+                   pAdjustMethod = "BH",
+                   pvalueCutoff  = 0.05,
+                   readable      = TRUE)
+```
+
+
+```{r}
+head(egosig)
+```
+
+```{r}
+dotplot(egosig)
+```
+
+```{r}
+goplot(egosig,showCategory = 6)
+```
+
+
+
+
+
+
+
+
+
